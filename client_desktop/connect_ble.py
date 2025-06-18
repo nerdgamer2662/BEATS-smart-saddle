@@ -1,15 +1,11 @@
-import tkinter as tk
+from tkinter import *
+from tkinter import ttk
+
 import threading
 import simplepyble
+import time
 
-isRecording = False
-
-tag_characteristic_uuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-control_characteristic_uuid = (
-    "d1e3f1a2-4c5b-4f8e-9c6b-7f3e1a2b3c4d"  # This is for toggling recording state
-)
-service_uuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-
+reading = False
 
 def initBLE():
     adapters = simplepyble.Adapter.get_adapters()
@@ -35,7 +31,7 @@ def initBLE():
     )
 
     # Scan for 5 seconds
-    adapter.scan_for(15000)
+    adapter.scan_for(5000)
     peripherals = adapter.scan_get_results()
 
     # Query the user to pick a peripheral
@@ -47,60 +43,123 @@ def initBLE():
             print(f"    Service UUID: {service.uuid()}")
             print(f"    Service data: {service.data()}")
 
-    print("Connecting to Esp32...")
     choice = int(input("Enter choice: "))
-    choice = i
     peripheral = peripherals[choice]
 
     print(f"Connecting to: {peripheral.identifier()} [{peripheral.address()}]")
     peripheral.connect()
 
-    # print("Successfully connected, listing services...")
-    # services = peripheral.services()
-    # service_characteristic_pair = []
-    # for service in services:
-    #     for characteristic in service.characteristics():
-    #         service_characteristic_pair.append((service.uuid(), characteristic.uuid()))
+    print("Successfully connected, listing services...")
+    services = peripheral.services()
+    service_characteristic_pair = []
+    for service in services:
+        for characteristic in service.characteristics():
+            service_characteristic_pair.append((service.uuid(), characteristic.uuid()))
 
     # Query the user to pick a service/characteristic pair
-    # print("Please select a service/characteristic pair:")
-    # for i, (service_uuid, characteristic) in enumerate(service_characteristic_pair):
-    #     if characteristic == "d1e3f1a2-4c5b-4f8e-9c6b-7f3e1a2b3c4d"
-    # print(f"{i}: {service_uuid} {characteristic}")
-    
-    print("Successfully connected")
+    print("Please select service/characteristic pairs:")
+    for i, (service_uuid, characteristic) in enumerate(service_characteristic_pair):
+        print(f"{i}: {service_uuid} {characteristic}")
 
-    # choice = int(input("Enter choice: "))
-    # choice = 0
-    # service_uuid, characteristic_uuid = service_characteristic_pair[choice]
-    return peripheral
+    pairs = []
+
+    try:
+        while True:
+            choice = int(input("Enter choice: "))
+            pairs.append(service_characteristic_pair[choice])
+    except Exception as e:
+        print(e)
+
+    return peripheral, pairs
 
 
 # create a thread to read from BLE and send to queue
-def read_from_ble(service_uuid, characteristic_uuid, peripheral):
-    old_contents = None
-    while True:
-        contents = peripheral.read(service_uuid, characteristic_uuid)
-        if contents != old_contents:
-            old_contents = contents
-            # Decode the contents assuming it's a string
-            decoded_contents = contents.decode("utf-8", errors="ignore").strip()
-            parsed_data = decoded_contents.split(",")
-            tag_EPC = parsed_data[0]
-            print(f"Parsed data: {parsed_data}")
+def read_from_ble(pairs, peripheral, file_name):
+    print("Started reading")
+    old_contents = []
+    contents = []
+    start_time = time.time()
 
-        else:
-            # Sleep for a short duration to avoid busy waiting
-            threading.Event().wait(0.1)
+    for p in pairs:
+        contents.append("")
+        old_contents.append("")
 
-if __name__ == "__main__":
-    # Initialize BLE and start reading from it
-    peripheral = initBLE()
+    print(reading)
+
+    with open(file_name + ".csv", "a") as f:
+        while reading:
+            no_updates = True
+            line = str(time.time() - start_time)
+            for i, p in enumerate(pairs):
+                line += ","
+                service_uuid, characteristic_uuid = p
+                contents[i] = peripheral.read(service_uuid, characteristic_uuid)
+                # print(contents[i])
+                if contents[i] != old_contents[i]:
+                    no_updates = False
+                old_contents[i] = contents[i]
+                # Decode the contents assuming it's a string
+                decoded_contents = contents[i].decode("utf-8", errors="ignore").strip()
+                line += decoded_contents
+
+                first = False
+
+            if no_updates:
+                threading.Event().wait(0.1)
+            else:
+                print(line)
+                f.write(line)
+                f.write("\n")
+
+    print("Done reading")
+
+def spawn_reader(file_name):
+    global reading
+    reading = True
 
     ble_thread = threading.Thread(
         target=read_from_ble,
-        args=(service_uuid, tag_characteristic_uuid, peripheral),
-        daemon=True,
+        args=(pairs, peripheral, file_name),
+        daemon=False,
     )
 
     ble_thread.start()
+
+def end_reader():
+    global reading
+    reading = False
+    print("Reader concluded, file should be stable")
+
+def spawn_ui():
+    root = Tk()
+    root.title("BLE CSVer")
+
+    mainframe = ttk.Frame(root, padding="3 3 12 12")
+    mainframe.grid(column=0, row=0, sticky=(N, W, E, S))
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+
+    file_name = StringVar()
+    file_name_entry = ttk.Entry(mainframe, width=7, textvariable=file_name)
+    file_name_entry.grid(column=2, row=1, sticky=(W, E))
+
+    ttk.Button(mainframe, text="Start Read", command= lambda: spawn_reader(file_name.get())).grid(column=1, row=3, sticky=W)
+    ttk.Button(mainframe, text="Stop Read", command=end_reader).grid(column=3, row=3, sticky=W)
+
+    ttk.Label(mainframe, text=".csv").grid(column=3, row=1, sticky=W)
+
+    for child in mainframe.winfo_children(): 
+        child.grid_configure(padx=5, pady=5)
+
+    file_name_entry.focus()
+    root.bind("<Return>", spawn_reader)
+    return root
+
+if __name__ == "__main__":
+    # Initialize BLE and start reading from it
+    peripheral, pairs = initBLE()
+
+    root = spawn_ui()
+
+    print("Init complete! See UI for buttons")
+    root.mainloop()

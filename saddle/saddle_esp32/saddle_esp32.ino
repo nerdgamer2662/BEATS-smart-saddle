@@ -13,9 +13,11 @@
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 
 // need to add more of these for other values!
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define CHARACTERISTIC_UUID_ONE "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define CHARACTERISTIC_UUID_TWO "478a3421-a04c-4978-8e4d-00cb8eea9af6"
 
-BLECharacteristic *pCharacteristic;
+
+BLECharacteristic *pCharacteristic[2]; // change size as needed
 
 class PressureCallbacks : public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic *pChar) {
@@ -33,12 +35,20 @@ void setup() {
   BLEServer *pServer = BLEDevice::createServer();
   BLEService *pService = pServer->createService(SERVICE_UUID);
   
-  pCharacteristic =
-    pService->createCharacteristic(CHARACTERISTIC_UUID, BLECharacteristic::PROPERTY_READ);
+  pCharacteristic[0] =
+    pService->createCharacteristic(CHARACTERISTIC_UUID_ONE, BLECharacteristic::PROPERTY_READ);
 
-  pCharacteristic->setCallbacks(new PressureCallbacks());
+  pCharacteristic[0]->setCallbacks(new PressureCallbacks());
 
-  pCharacteristic->setValue(String(101325)); // using pascals, feel free to adjust unit. this only takes strings
+  pCharacteristic[0]->setValue(String(101325)); // adjust this to a visibly reset value
+
+  pCharacteristic[1] =
+    pService->createCharacteristic(CHARACTERISTIC_UUID_TWO, BLECharacteristic::PROPERTY_READ);
+
+  pCharacteristic[1]->setCallbacks(new PressureCallbacks());
+
+  pCharacteristic[1]->setValue(String(0)); // adjust this to a visibly reset value
+
   pService->start();
 
   // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this still is working for backward compatibility
