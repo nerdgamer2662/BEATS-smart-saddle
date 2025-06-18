@@ -77,7 +77,7 @@ def initBLE():
 
 
 # create a thread to read from BLE and send to queue
-def read_from_ble(service_uuid, characteristic_uuid, peripheral, grid):
+def read_from_ble(service_uuid, characteristic_uuid, peripheral):
     old_contents = None
     while True:
         contents = peripheral.read(service_uuid, characteristic_uuid)
@@ -88,112 +88,19 @@ def read_from_ble(service_uuid, characteristic_uuid, peripheral, grid):
             parsed_data = decoded_contents.split(",")
             tag_EPC = parsed_data[0]
             print(f"Parsed data: {parsed_data}")
-            # find the first box in the grid that has the same EPC value
-            for i in range(len(grid)):
-                for j in range(len(grid[i])):
-                    arf_tag = grid[i][j]
-                    if arf_tag.EPC == "":
-                        pass
-                    elif arf_tag.EPC == tag_EPC:
-                        arf_tag.frame.config(bg="red")
-                    elif arf_tag.EPC != tag_EPC and arf_tag.frame.cget("bg") == "red":
-                        # Reset the color if it was previously red and no longer matches
-                        arf_tag.frame.config(bg="lightgreen")
 
         else:
             # Sleep for a short duration to avoid busy waiting
             threading.Event().wait(0.1)
 
-
-class ArfTag:
-    def __init__(self, frame):
-        self.EPC = ""
-        self.frame = frame
-
-
-def create_grid_of_boxes(parent, rows, cols):
-    """Creates a grid of boxes (frames) within the given parent widget."""
-    grid = []
-    for i in range(rows):
-        row = []
-        for j in range(cols):
-            frame = tk.Frame(
-                parent, relief=tk.SOLID, borderwidth=1, width=50, height=50
-            )
-            frame.grid(row=i, column=j)
-            row.append(ArfTag(frame))
-        grid.append(row)
-    return grid
-
-
-class ArfGUI:
-    def __init__(self, root, peripheral):
-        self.root = root
-        self.peripheral = peripheral
-        rows = 10
-        cols = 10
-        self.grid = create_grid_of_boxes(self.root, rows, cols)
-        # self.toggleRecordingButton = tk.Button(
-        #     root, text="Toggle Recording", command=toggleDeviceRecording
-        # )
-        # self.toggleRecordingButton.grid(
-        #     row=rows, columnspan=cols, pady=10
-        # )  # Place the button below the grid
-        # self.newTrialButton = tk.Button(
-        #     root, text="Create New Trial", command=startNewTrial
-        # )
-        # self.newTrialButton.grid(
-        #     row=rows + 1, columnspan=cols, pady=10
-        # )  # Place the button below the grid
-
-        self.toggleReading = False
-
-        # set the EPC of tags here
-        self.grid[0][8].EPC = "0x111111222222333333444444"
-        self.grid[0][0].EPC = "0x111133b2ddd9014000000000"
-        self.grid[1][2].EPC = "0x300833b2ddd9014000000000"
-        
-        # loop through each box in the grid and set the background color based on the EPC value
-        for i in range(rows):
-            for j in range(cols):
-                arf_tag = self.grid[i][j]
-                if arf_tag.EPC:
-                    arf_tag.frame.config(bg="lightgreen")
-                else:
-                    arf_tag.frame.config(bg="white")
-
-    def toggleDeviceRecording(self):
-        # This function can be implemented to toggle the recording state of the device
-        print("Toggling device recording state...")  # Placeholder action
-        self.toggleReading = int(not self.toggleReading)
-        self.peripheral.write_request(
-            service_uuid, control_characteristic_uuid, str.encode(self.toggleReading)
-        )
-
-    def startNewTrial(self):
-        # This function can be implemented to reset the grid or start a new trial
-        print("Starting a new trial...")  # Placeholder action
-        self.peripheral.write_request(
-            service_uuid, control_characteristic_uuid, str.encode("2")
-        )
-
-        # Reset all boxes to their initial state
-        for row in self.grid:
-            for arf_tag in row:
-                arf_tag.frame.config(bg="white")
-
-
 if __name__ == "__main__":
     # Initialize BLE and start reading from it
     peripheral = initBLE()
-    root = tk.Tk()
-    root.title("Arf-BLE GUI")
-    arfGUI = ArfGUI(root, peripheral)  # Create the GUI with the grid of boxes
 
     ble_thread = threading.Thread(
         target=read_from_ble,
-        args=(service_uuid, tag_characteristic_uuid, peripheral, arfGUI.grid),
+        args=(service_uuid, tag_characteristic_uuid, peripheral),
         daemon=True,
     )
+
     ble_thread.start()
-    root.mainloop()
